@@ -34,10 +34,12 @@ contract Voting is Ownable {
     event ProposalRegistered(uint proposalId);
     event Voted (address voter, uint proposalId);
 
-    uint private winningProposalId;
+    uint private highestVoteCount;
     WorkflowStatus private workflowStatus;
     Proposal[] private proposals;
     mapping (address => Voter) private voters;
+    mapping (uint => uint[]) private proposalsIdsVoteCounts;
+    mapping (uint => Proposal[]) private proposalsVoteCounts;
 
     /**
      * @dev Constructor.
@@ -78,12 +80,61 @@ contract Voting is Ownable {
     }
 
     /**
+     * @dev Get the highest vote counted.
+     *
+     * @return uint The highest vote counted.
+     */
+    function getHighestVoteCount() public view returns (uint) {
+        require(workflowStatus == WorkflowStatus.VotesTallied, 'The workflow status cannot allowed you to see the highest vote count.');
+
+        return highestVoteCount;
+    }
+
+    /**
      * @dev Get the workflow status.
      *
      * @return Workflowstatus The workflowStatus.
      */
     function getWorkflowstatus() public view returns (WorkflowStatus) {
         return workflowStatus;
+    }
+
+    /**
+     * @dev Request a proposal with a description.
+     *
+     * @param _description The description of the proposal.
+     */
+    function requestProposal(string memory _description) public onlyVoters {
+        require(workflowStatus == WorkflowStatus.ProposalsRegistrationStarted, 'The workflow status cannot allowed you to request proposals.');
+        require(!strcmp(_description, ''), 'Please enter a valid description.');
+
+        Proposal memory proposal;
+        proposal.description = _description;
+        proposals.push(proposal);
+
+        emit ProposalRegistered(proposals.length - 1);
+    }
+
+    /**
+     * @dev Get all proposal.
+     *
+     * @return Proposal[] The proposal list.
+     */
+    function getProposals() public view onlyVoters returns (Proposal[] memory)  {
+        return proposals;
+    }
+
+    /**
+     * @dev Get a proposal information with an the proposal id.
+     *
+     * @param _proposalId The proposal id.
+     *
+     * @return Proposal The proposal information.
+     */
+    function getProposal(uint _proposalId) public view onlyVoters returns (Proposal memory) {
+        require(_proposalId < proposals.length, 'Proposal not found. Please enter a valid id.');
+
+        return proposals[_proposalId];
     }
 
     /**
@@ -123,44 +174,6 @@ contract Voting is Ownable {
      */
     function getVoter(address _voterAddress) public onlyVoters view returns (Voter memory) {
         return voters[_voterAddress];
-    }
-
-    /**
-     * @dev Request a proposal with a description.
-     *
-     * @param _description The description of the proposal.
-     */
-    function requestProposal(string memory _description) public onlyVoters {
-        require(workflowStatus == WorkflowStatus.ProposalsRegistrationStarted, 'The workflow status cannot allowed you to request proposals.');
-        require(!strcmp(_description, ''), 'Please enter a valid description.');
-
-        Proposal memory proposal;
-        proposal.description = _description;
-        proposals.push(proposal);
-
-        emit ProposalRegistered(proposals.length - 1);
-    }
-
-    /**
-     * @dev Get all proposal.
-     *
-     * @return Proposal[] The proposal list.
-     */
-    function getProposals() public view onlyVoters returns (Proposal[] memory)  {
-        return proposals;
-    }
-
-    /**
-     * @dev Get a proposal information with an the proposal id.
-     *
-     * @param _proposalId The proposal id.
-     *
-     * @return Proposal The proposal information.
-     */
-    function getProposal(uint _proposalId) public view onlyVoters returns (Proposal memory) {
-        require(_proposalId < proposals.length, 'Proposal not found. Please enter a valid id.');
-
-        return proposals[_proposalId];
     }
 
     /**
@@ -206,9 +219,8 @@ contract Voting is Ownable {
         require(_proposalId < proposals.length, 'Proposal not found. Please enter a valid id.');
         require(!voters[msg.sender].hasVoted, 'You have already voted.');
 
-        Voter storage voter = voters[msg.sender];
-        voter.votedProposalId = _proposalId;
-        voter.hasVoted = true;
+        voters[msg.sender].votedProposalId = _proposalId;
+        voters[msg.sender].hasVoted = true;
         proposals[_proposalId].voteCount++;
 
         emit Voted(msg.sender, _proposalId);
@@ -226,14 +238,18 @@ contract Voting is Ownable {
     }
 
     /**
-     * @dev Tally all votes.
+     * @dev Tally all votes. Sort into voteCounts mapping all the proposalIds by vote counted then store the hightest vote count.
      */
     function tallyVotes() public onlyOwner {
         require(workflowStatus == WorkflowStatus.VotingSessionEnded, 'The workflow status cannot allowed you to tally votes.');
 
-        for (uint i = 0; i < proposals.length; i++) {
-            if (proposals[winningProposalId].voteCount < proposals[i].voteCount) {
-                winningProposalId = i;
+        for (uint proposalId = 0; proposalId < proposals.length; proposalId++) {
+            Proposal memory proposal = proposals[proposalId];
+            proposalsIdsVoteCounts[proposal.voteCount].push(proposalId);
+            proposalsVoteCounts[proposal.voteCount].push(proposal);
+
+            if (highestVoteCount < proposal.voteCount) {
+                highestVoteCount = proposal.voteCount;
             }
         }
 
@@ -243,24 +259,24 @@ contract Voting is Ownable {
     }
 
     /**
-     * @dev Get the winning proposal id.
+     * @dev Get a list of winning proposal ids.
      *
-     * @return uint The winning proposal id..
+     * @return uint[] A list of winning proposal ids.
      */
-    function getWinningProposalId() public view returns (uint) {
-        require(workflowStatus == WorkflowStatus.VotesTallied, 'The workflow status cannot allowed you to see the winner proposal.');
+    function getWinningProposalIds() public view returns (uint[] memory) {
+        require(workflowStatus == WorkflowStatus.VotesTallied, 'The workflow status cannot allowed you to see the winners proposal ids.');
 
-        return winningProposalId;
+        return proposalsIdsVoteCounts[highestVoteCount];
     }
 
     /**
-     * @dev Get the winning proposal detail.
+     * @dev Get a list of winning proposal.
      *
-     * @return Proposal The winning proposal.
+     * @return Proposal[] A list of winning proposals.
      */
-    function getWinner() public view returns (Proposal memory) {
-        require(workflowStatus == WorkflowStatus.VotesTallied, 'The workflow status cannot allowed you to see the winner proposal.');
+    function getWinners() public view returns (Proposal[] memory) {
+        require(workflowStatus == WorkflowStatus.VotesTallied, 'The workflow status cannot allowed you to see the winners proposals.');
 
-        return proposals[winningProposalId];
+        return proposalsVoteCounts[highestVoteCount];
     }
 }
