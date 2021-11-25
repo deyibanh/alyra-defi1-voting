@@ -1,15 +1,24 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.9;
+pragma solidity 0.8.9;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
- * @title Voting
+ * @title A voting system contract.
+ *
+ * @author Dé Yi Banh
  *
  * @dev A voting system.
  */
 contract Voting is Ownable {
+    uint private highestVoteCount;
+    WorkflowStatus private workflowStatus;
+    Proposal[] private proposals;
+    mapping (address => Voter) private voters;
+    mapping (uint => uint[]) private proposalsIdsVoteCounts;
+    mapping (uint => Proposal[]) private proposalsVoteCounts;
+
     struct Voter {
         bool isRegistered;
         bool hasVoted;
@@ -28,26 +37,11 @@ contract Voting is Ownable {
         VotingSessionEnded,
         VotesTallied
     }
-    
-    event VoterRegistered(address voterAddress); 
+
+    event VoterRegistered(address voterAddress);
     event WorkflowStatusChange(WorkflowStatus previousStatus, WorkflowStatus newStatus);
     event ProposalRegistered(uint proposalId);
     event Voted (address voter, uint proposalId);
-
-    uint private highestVoteCount;
-    WorkflowStatus private workflowStatus;
-    Proposal[] private proposals;
-    mapping (address => Voter) private voters;
-    mapping (uint => uint[]) private proposalsIdsVoteCounts;
-    mapping (uint => Proposal[]) private proposalsVoteCounts;
-
-    /**
-     * @dev Constructor.
-     */
-    constructor() Ownable() {
-        workflowStatus = WorkflowStatus.RegisteringVoters;
-        addVoter(msg.sender);
-    }
 
     /**
      * @dev Check if the sender is registered in the voters list.
@@ -60,23 +54,13 @@ contract Voting is Ownable {
     /**
      * @dev Compare two string and return a boolean.
      *
-     * @param str1 The first string.
-     * @param str2 The second string.
+     * @param _str1 The first string.
+     * @param _str2 The second string.
      *
      * @return bool Returns false if there is a difference, otherwise returns true.
      */
-    function strcmp(string memory str1, string memory str2) internal pure returns (bool) {
-        return (keccak256(abi.encodePacked((str1))) == keccak256(abi.encodePacked((str2))));
-    }
-
-    /**
-     * @dev Initialize the whitelist with specific addresses for demo.
-     */
-    function initWhitelistForDemo() public onlyOwner {
-        addVoter(0xa6a0E2b63F74f6F16bf6DF09dA021ac8D4E32fBc);
-        addVoter(0xf5A08f0aEf033c1e0466bF85661d51973DB97aEd);
-        addVoter(0x79C0ece05791d98Efe8383F973091443A32572b4);
-        addVoter(0x3e32fB744706830706ba69F3bfDbf5dDC299f442);
+    function strcmp(string memory _str1, string memory _str2) internal pure returns (bool) {
+        return (keccak256(abi.encodePacked((_str1))) == keccak256(abi.encodePacked((_str2))));
     }
 
     /**
@@ -84,8 +68,8 @@ contract Voting is Ownable {
      *
      * @return uint The highest vote counted.
      */
-    function getHighestVoteCount() public view returns (uint) {
-        require(workflowStatus == WorkflowStatus.VotesTallied, 'The workflow status cannot allowed you to see the highest vote count.');
+    function getHighestVoteCount() external view returns (uint) {
+        require(workflowStatus == WorkflowStatus.VotesTallied, "The workflow status cannot allowed you to see the highest vote count.");
 
         return highestVoteCount;
     }
@@ -95,18 +79,18 @@ contract Voting is Ownable {
      *
      * @return Workflowstatus The workflowStatus.
      */
-    function getWorkflowstatus() public view returns (WorkflowStatus) {
+    function getWorkflowstatus() external view returns (WorkflowStatus) {
         return workflowStatus;
     }
 
     /**
-     * @dev Request a proposal with a description.
+     * @dev Add a proposal with a description.
      *
      * @param _description The description of the proposal.
      */
-    function requestProposal(string memory _description) public onlyVoters {
-        require(workflowStatus == WorkflowStatus.ProposalsRegistrationStarted, 'The workflow status cannot allowed you to request proposals.');
-        require(!strcmp(_description, ''), 'Please enter a valid description.');
+    function addProposal(string memory _description) external onlyVoters {
+        require(workflowStatus == WorkflowStatus.ProposalsRegistrationStarted, "The workflow status cannot allowed you to request proposals.");
+        require(!strcmp(_description, ""), "Please enter a valid description.");
 
         Proposal memory proposal;
         proposal.description = _description;
@@ -120,7 +104,7 @@ contract Voting is Ownable {
      *
      * @return Proposal[] The proposal list.
      */
-    function getProposals() public view onlyVoters returns (Proposal[] memory)  {
+    function getProposals() external view onlyVoters returns (Proposal[] memory)  {
         return proposals;
     }
 
@@ -131,8 +115,8 @@ contract Voting is Ownable {
      *
      * @return Proposal The proposal information.
      */
-    function getProposal(uint _proposalId) public view onlyVoters returns (Proposal memory) {
-        require(_proposalId < proposals.length, 'Proposal not found. Please enter a valid id.');
+    function getProposal(uint _proposalId) external view onlyVoters returns (Proposal memory) {
+        require(_proposalId < proposals.length, "Proposal not found. Please enter a valid id.");
 
         return proposals[_proposalId];
     }
@@ -142,9 +126,9 @@ contract Voting is Ownable {
      *
      * @param _voterAddress The voter address.
      */
-    function addVoter(address _voterAddress) public onlyOwner {
-        require(workflowStatus == WorkflowStatus.RegisteringVoters, 'The workflow status cannot allowed you to add voters.');
-        require(!voters[_voterAddress].isRegistered, 'The voter is already registered.');
+    function addVoter(address _voterAddress) external onlyOwner {
+        require(workflowStatus == WorkflowStatus.RegisteringVoters, "The workflow status cannot allowed you to add voters.");
+        require(!voters[_voterAddress].isRegistered, "The voter is already registered.");
 
         voters[_voterAddress].isRegistered = true;
 
@@ -156,9 +140,9 @@ contract Voting is Ownable {
      *
      * @param _voterAddress The voter address.
      */
-    function removeVoter(address _voterAddress) public onlyOwner {
-        require(workflowStatus == WorkflowStatus.RegisteringVoters, 'The workflow status cannot allowed you to remove voters.');
-        require(voters[_voterAddress].isRegistered, 'The voter is already not registered.');
+    function removeVoter(address _voterAddress) external onlyOwner {
+        require(workflowStatus == WorkflowStatus.RegisteringVoters, "The workflow status cannot allowed you to remove voters.");
+        require(voters[_voterAddress].isRegistered, "The voter is already not registered.");
 
         voters[_voterAddress].isRegistered = false;
 
@@ -172,15 +156,15 @@ contract Voting is Ownable {
      *
      * @return Voter The voter.
      */
-    function getVoter(address _voterAddress) public onlyVoters view returns (Voter memory) {
+    function getVoter(address _voterAddress) external onlyVoters view returns (Voter memory) {
         return voters[_voterAddress];
     }
 
     /**
      * @dev Start to register proposals.
      */
-    function startRegisteringProposals() public onlyOwner {
-        require(workflowStatus == WorkflowStatus.RegisteringVoters, 'The workflow status cannot allowed you to start registering proposals.');
+    function startRegisteringProposals() external onlyOwner {
+        require(workflowStatus == WorkflowStatus.RegisteringVoters, "The workflow status not allowed you to start registering proposals.");
 
         workflowStatus = WorkflowStatus.ProposalsRegistrationStarted;
 
@@ -190,9 +174,12 @@ contract Voting is Ownable {
     /**
      * @dev Stop registering proposals.
      */
-    function stopRegisteringProposals() public onlyOwner {
-        require(workflowStatus == WorkflowStatus.ProposalsRegistrationStarted, 'The workflow status cannot allowed you to stop registering proposals.');
-        
+    function stopRegisteringProposals() external onlyOwner {
+        require(
+            workflowStatus == WorkflowStatus.ProposalsRegistrationStarted,
+            "The workflow status not allowed you to stop registering proposals."
+        );
+
         workflowStatus = WorkflowStatus.ProposalsRegistrationEnded;
 
         emit WorkflowStatusChange(WorkflowStatus.ProposalsRegistrationStarted, WorkflowStatus.ProposalsRegistrationEnded);
@@ -201,11 +188,11 @@ contract Voting is Ownable {
     /**
      * @dev Start the voting session.
      */
-    function startVotingSession() public onlyOwner {
-        require(workflowStatus == WorkflowStatus.ProposalsRegistrationEnded, 'The workflow status cannot allowed you to start the voting session.');
-        
+    function startVotingSession() external onlyOwner {
+        require(workflowStatus == WorkflowStatus.ProposalsRegistrationEnded, "The workflow status not allowed you to start the voting session.");
+
         workflowStatus = WorkflowStatus.VotingSessionStarted;
-        
+
         emit WorkflowStatusChange(WorkflowStatus.ProposalsRegistrationEnded, WorkflowStatus.VotingSessionStarted);
     }
 
@@ -214,10 +201,10 @@ contract Voting is Ownable {
      *
      * @param _proposalId The proposal id.
      */
-    function vote(uint _proposalId) public onlyVoters {
-        require(workflowStatus == WorkflowStatus.VotingSessionStarted, 'The workflow status cannot allowed you to vote.');
-        require(_proposalId < proposals.length, 'Proposal not found. Please enter a valid id.');
-        require(!voters[msg.sender].hasVoted, 'You have already voted.');
+    function vote(uint _proposalId) external onlyVoters {
+        require(workflowStatus == WorkflowStatus.VotingSessionStarted, "The workflow status not allowed you to vote.");
+        require(_proposalId < proposals.length, "Proposal not found. Please enter a valid id.");
+        require(!voters[msg.sender].hasVoted, "You have already voted.");
 
         voters[msg.sender].votedProposalId = _proposalId;
         voters[msg.sender].hasVoted = true;
@@ -229,8 +216,8 @@ contract Voting is Ownable {
     /**
      * @dev Stop the voting session.
      */
-    function stopVotingSession() public onlyOwner {
-        require(workflowStatus == WorkflowStatus.VotingSessionStarted, 'The workflow status cannot allowed you to stop the voting session.');
+    function stopVotingSession() external onlyOwner {
+        require(workflowStatus == WorkflowStatus.VotingSessionStarted, "The workflow status not allowed you to stop the voting session.");
         
         workflowStatus = WorkflowStatus.VotingSessionEnded;
         
@@ -240,8 +227,8 @@ contract Voting is Ownable {
     /**
      * @dev Tally all votes. Sort into voteCounts mapping all the proposalIds by vote counted then store the hightest vote count.
      */
-    function tallyVotes() public onlyOwner {
-        require(workflowStatus == WorkflowStatus.VotingSessionEnded, 'The workflow status cannot allowed you to tally votes.');
+    function tallyVotes() external onlyOwner {
+        require(workflowStatus == WorkflowStatus.VotingSessionEnded, "The workflow status not allowed you to tally votes.");
 
         for (uint proposalId = 0; proposalId < proposals.length; proposalId++) {
             Proposal memory proposal = proposals[proposalId];
@@ -263,8 +250,8 @@ contract Voting is Ownable {
      *
      * @return uint[] A list of winning proposal ids.
      */
-    function getWinningProposalIds() public view returns (uint[] memory) {
-        require(workflowStatus == WorkflowStatus.VotesTallied, 'The workflow status cannot allowed you to see the winners proposal ids.');
+    function getWinningProposalIds() external view returns (uint[] memory) {
+        require(workflowStatus == WorkflowStatus.VotesTallied, "The workflow status cannot allowed you to see the winners proposal ids.");
 
         return proposalsIdsVoteCounts[highestVoteCount];
     }
@@ -274,8 +261,8 @@ contract Voting is Ownable {
      *
      * @return Proposal[] A list of winning proposals.
      */
-    function getWinners() public view returns (Proposal[] memory) {
-        require(workflowStatus == WorkflowStatus.VotesTallied, 'The workflow status cannot allowed you to see the winners proposals.');
+    function getWinners() external view returns (Proposal[] memory) {
+        require(workflowStatus == WorkflowStatus.VotesTallied, "The workflow status cannot allowed you to see the winners proposals.");
 
         return proposalsVoteCounts[highestVoteCount];
     }
